@@ -11,12 +11,18 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
   tf2
+  tf2_ros
   nav_msgs
   geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
+
+# Eigen
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -117,7 +123,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
+ 	include
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -151,6 +157,9 @@ add_executable(odometry_transformer src/odometry_transformer.cpp)
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
+target_link_libraries(odometry_transformer
+   ${catkin_LIBRARIES}
+ )
 
 #############
 ## Install ##
