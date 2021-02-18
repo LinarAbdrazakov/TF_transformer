@@ -97,7 +97,7 @@ void transfrom_to_twist_matrix(const geometry_msgs::TransformStamped& transformS
 	q.z() = transformStamped.transform.rotation.z;
 	q.w() = transformStamped.transform.rotation.w;
 
-	Eigen::Matrix3d rot = q.normalized().toRotationMatrix();
+	Eigen::Matrix3d rot = q.normalized().toRotationMatrix().transpose();
 	matrix.block(0,0,3,3) = rot;
 	matrix.block(3,3,3,3) = rot;
 	matrix.block(0,3,3,3) = t_hat * rot;
@@ -151,7 +151,7 @@ void odomCallback(const nav_msgs::Odometry& msg)
 
     	// apply transfrom on pose
     	Eigen::Matrix4d pose_matrix_result;
-    	pose_matrix_result = transfrom_matrix * pose_matrix * transfrom_matrix.transpose();
+    	pose_matrix_result = transfrom_matrix.transpose() * pose_matrix * transfrom_matrix;
     	matrix_to_pose(pose_matrix_result, msg_result.pose.pose);
 
     	// convert transform to twist_transfrom
@@ -186,13 +186,13 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "odometry_transformer");
 	ros::NodeHandle node;
 
-	ros::param::set("from_frame", "one");
-	ros::param::set("to_frame", "two");
+	ros::param::set("from_frame", "zed_left_camera_optical_frame");
+	ros::param::set("to_frame", "base_link");
 
 	tf2_ros::TransformListener tfListener(tfBuffer);
 
- 	pub = node.advertise<nav_msgs::Odometry>("odom", 10);
- 	ros::Subscriber sub = node.subscribe("/openvslam_odom", 10, odomCallback);
+ 	pub = node.advertise<nav_msgs::Odometry>("/visual_odom", 10);
+ 	ros::Subscriber sub = node.subscribe("/OpenVSLAM/odom", 10, odomCallback);
 
  	ros::spin();
 
