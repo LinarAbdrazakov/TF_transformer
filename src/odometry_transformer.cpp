@@ -16,8 +16,35 @@
 
 
 tf2_ros::Buffer tfBuffer;
-
 ros::Publisher pub;
+
+bool reset_odom = false;
+bool first_pose = true; 
+Eigen::Matrix4d first_pose_inv;
+
+
+void inverse(Eigen::Matrix4d& in, Eigen::Matrix4d& out) 
+{
+	// set result matrix to identity matrix
+	out.setIdentity();
+	// get rotation matrix
+	Eigen::Matrix3d rot;
+	rot = in.block(0, 0, 3, 3);
+	// inverse rotation matrix
+	Eigen::Matrix3d rot_inverse;
+	rot_inverse = rot.transpose();
+	// set inversed rotation matrix
+	out.block(0, 0, 3, 3) = rot_inverse;
+
+	// get translation
+	Eigen::Vector3d t;
+	t = in.block(0, 3, 3, 1);
+	// inverse translation
+	Eigen::Vector3d t_inv;
+	t_inv = -1 * rot * t;
+	// set inversed translation
+	out.block(0, 3, 3, 1) = t_inv;
+}
 
 
 void transform_to_matrix(const geometry_msgs::TransformStamped& transformStamped, Eigen::Matrix4d& matrix) 
@@ -77,27 +104,22 @@ void matrix_to_pose(const Eigen::Matrix4d& matrix, geometry_msgs::Pose& pose)
 }
 
 
-void transfrom_to_twist_matrix(const geometry_msgs::TransformStamped& transformStamped, Eigen::MatrixXd& matrix) 
+void transfrom_to_twist_matrix(const Eigen::Matrix4d& transfrom_matrix_inv, Eigen::MatrixXd& matrix) 
 {
 	matrix.setIdentity();
 
 	Eigen::Vector3d t;
-	t.x() = transformStamped.transform.translation.x;
-	t.y() = transformStamped.transform.translation.y;
-	t.z() = transformStamped.transform.translation.z;
+	t = transfrom_matrix_inv.block(0, 3, 3, 1);
 
 	Eigen::Matrix3d t_hat;
 	t_hat << 0, -t(2), t(1),
 			 t(2), 0, -t(0),
     		-t(1), t(0), 0;
 
-	Eigen::Quaterniond q;
-	q.x() = transformStamped.transform.rotation.x;
-	q.y() = transformStamped.transform.rotation.y;
-	q.z() = transformStamped.transform.rotation.z;
-	q.w() = transformStamped.transform.rotation.w;
 
-	Eigen::Matrix3d rot = q.normalized().toRotationMatrix().transpose();
+	Eigen::Matrix3d rot;
+	rot = transfrom_matrix_inv.block(0, 0, 3, 3);
+
 	matrix.block(0,0,3,3) = rot;
 	matrix.block(3,3,3,3) = rot;
 	matrix.block(0,3,3,3) = t_hat * rot;
@@ -144,19 +166,34 @@ void odomCallback(const nav_msgs::Odometry& msg)
     	// convert transform to matrix 
     	Eigen::Matrix4d transfrom_matrix;
     	transform_to_matrix(transformStamped, transfrom_matrix);
+    	// get inverse transform matrix
+    	Eigen::Matrix4d transfrom_matrix_inv;
+    	inverse(transfrom_matrix, transfrom_matrix_inv);
 
+    	// --------------------- pose transform --------------------- 
     	// convert pose to matrix
     	Eigen::Matrix4d pose_matrix;
     	pose_to_matrix(msg.pose.pose, pose_matrix);
 
     	// apply transfrom on pose
     	Eigen::Matrix4d pose_matrix_result;
-    	pose_matrix_result = transfrom_matrix.transpose() * pose_matrix * transfrom_matrix;
+    	pose_matrix_result = transfrom_matrix_inv * pose_matrix * transfrom_matrix;
+
+    	// reset odom if needed
+    	if (reset_odom) {
+    		if (first_pose) {
+    			inverse(pose_matrix_result, first_pose_inv);
+    			first_pose = false;
+    		}
+    		pose_matrix_result = first_pose_inv * pose_matrix_result;
+    	}
+
     	matrix_to_pose(pose_matrix_result, msg_result.pose.pose);
 
+    	// --------------------- twist transform ---------------------
     	// convert transform to twist_transfrom
     	Eigen::MatrixXd twist_transfrom(6, 6);
-    	transfrom_to_twist_matrix(transformStamped, twist_transfrom);
+    	transfrom_to_twist_matrix(transfrom_matrix_inv, twist_transfrom);
 
     	// convert twist to vector
     	Eigen::VectorXd twist_vector(6);
@@ -167,6 +204,7 @@ void odomCallback(const nav_msgs::Odometry& msg)
     	twist_vector_result = twist_transfrom * twist_vector;
     	vector_to_twist(twist_vector_result, msg_result.twist.twist);
 
+    	// --------------------- header replacement ---------------------
     	// copy header
     	msg_result.header = msg.header;
     	msg_result.header.frame_id = "odom";
@@ -181,6 +219,7 @@ void odomCallback(const nav_msgs::Odometry& msg)
  	}
 }
 
+
 int main(int argc, char **argv) 
 {
 	ros::init(argc, argv, "odometry_transformer");
@@ -188,6 +227,9 @@ int main(int argc, char **argv)
 
 	ros::param::set("from_frame", "zed_left_camera_optical_frame");
 	ros::param::set("to_frame", "base_link");
+	ros::param::set("reset_odom", true);
+
+	ros::param::get("reset_odom", reset_odom);
 
 	tf2_ros::TransformListener tfListener(tfBuffer);
 
