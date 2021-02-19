@@ -1,4 +1,5 @@
 #include <iostream>
+#include <vector>
 
 #include <ros/ros.h>
 #include <tf2_ros/transform_listener.h>
@@ -155,8 +156,8 @@ void odomCallback(const nav_msgs::Odometry& msg)
 	nav_msgs::Odometry msg_result;
 
 	std::string from_frame, to_frame;
-	ros::param::get("from_frame", from_frame);
-	ros::param::get("to_frame", to_frame);
+	ros::param::get("~from_frame", from_frame);
+	ros::param::get("~to_frame", to_frame);
 
 	geometry_msgs::TransformStamped transformStamped;
 	try
@@ -210,6 +211,13 @@ void odomCallback(const nav_msgs::Odometry& msg)
     	msg_result.header.frame_id = "odom";
     	msg_result.child_frame_id = to_frame;
 
+        // write pose noise covariance if needed
+        if(ros::param::has("~covariance")) 
+        {
+            std::vector<double> covariance;
+            ros::param::get("~covariance", covariance);
+            for (int i = 0; i < 36 && i < covariance.size(); ++i) msg_result.pose.covariance[i] = covariance[i];
+        }
     	// publish odometry
     	pub.publish(msg_result);
  	}
@@ -225,16 +233,15 @@ int main(int argc, char **argv)
 	ros::init(argc, argv, "odometry_transformer");
 	ros::NodeHandle node;
 
-	ros::param::set("from_frame", "zed_left_camera_optical_frame");
-	ros::param::set("to_frame", "base_link");
-	ros::param::set("reset_odom", true);
-
-	ros::param::get("reset_odom", reset_odom);
+	std::string in_topic, out_topic;
+	ros::param::get("~in_topic", in_topic);
+	ros::param::get("~out_topic", out_topic);
+        ros::param::get("~reset_odom", reset_odom);
 
 	tf2_ros::TransformListener tfListener(tfBuffer);
 
- 	pub = node.advertise<nav_msgs::Odometry>("/visual_odom", 10);
- 	ros::Subscriber sub = node.subscribe("/OpenVSLAM/odom", 10, odomCallback);
+ 	pub = node.advertise<nav_msgs::Odometry>(out_topic, 10);
+ 	ros::Subscriber sub = node.subscribe(in_topic, 10, odomCallback);
 
  	ros::spin();
 
